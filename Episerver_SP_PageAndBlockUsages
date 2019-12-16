@@ -1,0 +1,64 @@
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ALTER PROCEDURE Episerver_SP_PageAndBlockUsages 
+AS
+BEGIN
+	-- SET NOCOUNT ON added to prevent extra result sets from
+	-- interfering with SELECT statements.
+	SET NOCOUNT ON;
+
+    -- Insert statements for procedure here
+	Select distinct 
+		IDENTITY(int, 1, 1) AS [Id]
+		,Case When tblContentType.Name Like '%Page%' Then 'Page' When tblContentType.Name Like '%Block%' Then 'Block' Else '' END AS [Type]
+		,tblProperty.fkPageID
+		,tblContentType.Name AS [ContentType]
+		,tblPageLanguage.Name 'Content Name'
+		,IsNull(tblPageLanguage.URLSegment, '') AS [NameInUrl]
+		,CONVERT(VARCHAR(11), tblContentType.Created, 106) AS [CreatedDate]
+		,CONVERT(VARCHAR(11), tblPageLanguage.Saved, 106) AS [ModifiedDate]
+		,CONVERT(VARCHAR(11), tblPageLanguage.StopPublish, 106) AS [ExpiryDate]
+		--,tblPage.CreatorName AS [CreatedByNA]
+		,tblPageLanguage.CreatorName AS [CreatedBy]
+		,tblPageLanguage.ChangedByName AS [ChangedBy]
+		,tblPageLanguage.LinkURL AS [LinkURL]
+		,0 AS [Usages]
+	INTO #Temp_PageAndBlockUsages
+	from tblProperty 
+	inner join tblPage on tblProperty.fkPageID = tblPage.pkID 
+	inner join tblPageLanguage on tblpage.pkID = tblPageLanguage.fkPageID 
+	inner join tblContentType on tblPage.fkPageTypeID=tblContentType.pkID
+	Where 1=1
+	Order by tblPageLanguage.Name
+
+	DECLARE @UsagesTempTable TABLE
+	(
+		OwnerLanguageID bigint,
+		ReferencedLanguageID bigint,
+		OwnerID bigint,
+		OwnerName varchar(MAX),
+		ReferencedID bigint,
+		ReferencedName varchar(MAX),
+		ReferenceType int
+	)
+
+	DECLARE @RunningId AS BIGINT
+	DECLARE @fkPageID AS BIGINT
+	SET @RunningId = 1
+
+	While (Select Count(*) From #Temp_PageAndBlockUsages Where Id = @RunningId) > 0
+	Begin
+		Set @fkPageID = (Select fkPageID From #Temp_PageAndBlockUsages Where Id = @RunningId)
+		Delete from @UsagesTempTable
+		Insert Into @UsagesTempTable exec editDeletePageCheck @PageID=@fkPageID,@IncludeDecendents=1
+		Update #Temp_PageAndBlockUsages Set Usages=(SELECT Count(*) From @UsagesTempTable) Where Id=@RunningId
+		SET @RunningId = @RunningId+1
+	End
+
+	Select * From #Temp_PageAndBlockUsages
+
+	DROP TABLE IF EXISTS #Temp_PageAndBlockUsages
+END
+GO
